@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Supply Donations</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.8.1/web3.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold mb-8 text-center text-indigo-600">School Supply Donations</h1>
+
+        <!-- Connect Wallet -->
+        <div class="mb-8 text-center">
+            <button id="connectWallet" class="bg-indigo-500 text-white px-6 py-2 rounded-lg hover:bg-indigo-600">
+                Connect Wallet
+            </button>
+            <p id="walletAddress" class="mt-2 text-gray-600"></p>
+        </div>
+
+        <!-- Register School -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-2xl font-semibold mb-4 text-indigo-600">Register School</h2>
+            <div class="space-y-4">
+                <input type="text" id="schoolName" placeholder="School Name" 
+                    class="w-full p-2 border rounded">
+                <input type="text" id="schoolLocation" placeholder="School Location" 
+                    class="w-full p-2 border rounded">
+                <input type="text" id="schoolNeeds" placeholder="Needs (comma separated)" 
+                    class="w-full p-2 border rounded">
+                <button id="registerSchoolBtn" class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
+                    Register School
+                </button>
+            </div>
+        </div>
+
+        <!-- Make Donation -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-2xl font-semibold mb-4 text-indigo-600">Make Donation</h2>
+            <div class="space-y-4">
+                <select id="donateSchoolSelect" class="w-full p-2 border rounded">
+                    <option value="">Select a school</option>
+                </select>
+                <input type="text" id="itemName" placeholder="Item Name" 
+                    class="w-full p-2 border rounded">
+                <input type="number" id="quantity" placeholder="Quantity" 
+                    class="w-full p-2 border rounded">
+                <textarea id="message" placeholder="Leave a message..." 
+                    class="w-full p-2 border rounded h-32"></textarea>
+                <button id="makeDonationBtn" class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600">
+                    Make Donation
+                </button>
+            </div>
+        </div>
+
+        <!-- Donation History -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold mb-4 text-indigo-600">Recent Donations</h2>
+            <div id="donationHistory" class="space-y-4"></div>
+        </div>
+    </div>
+
+    <script>
+        let web3;
+        let contract;
+        let userAccount;
+        
+        // Contract ABI - Replace with your contract's ABI
+        const contractABI = [
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "donationId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "schoolName",
+				"type": "string"
+			}
+		],
+		"name": "DonationDelivered",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "donationId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "donor",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "itemName",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "quantity",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "schoolName",
+				"type": "string"
+			}
+		],
+		"name": "DonationMade",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
+				"name": "itemName",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "quantity",
+				"type": "uint256"
+			},
+			{
+				"internalType": "string",
+				"name": "schoolName",
+				"type": "string"
+			},
+			{
+				"internalType": "string",
+				"name": "message",
+				"type": "string"
+			}
+		],
+		"name": "makeDonation",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "donationId",
+				"type": "uint256"
+			}
+		],
+		"name": "markDonationDelivered",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
+				"name": "name",
+				"type": "string"
+			},
+			{
+				"internalType": "string",
+				"name": "location",
+				"type": "string"
+			},
+			{
+				"internalType": "string[]",
+				"name": "initialNeeds",
+				"type": "string[]"
+			}
+		],
+		"name": "registerSchool",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "name",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "location",
+				"type": "string"
+			}
+		],
+		"name": "SchoolRegistered",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
+				"name": "schoolName",
+				"type": "string"
+			},
+			{
+				"internalType": "string[]",
+				"name": "newNeeds",
+				"type": "string[]"
+			}
+		],
+		"name": "updateSchoolNeeds",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "donations",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "donor",
+				"type": "address"
+			},
+			{
+				"internalType": "string",
+				"name": "itemName",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "quantity",
+				"type": "uint256"
+			},
+			{
+				"internalType": "string",
+				"name": "schoolName",
+				"type": "string"
+			},
+			{
+				"internalType": "string",
+				"name": "message",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "isDelivered",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "donorHistory",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "getAllSchools",
+		"outputs": [
+			{
+				"internalType": "string[]",
+				"name": "",
+				"type": "string[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "donationId",
+				"type": "uint256"
+			}
+		],
+		"name": "getDonationDetails",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "donor",
+				"type": "address"
+			},
+			{
+				"internalType": "string",
+				"name": "itemName",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "quantity",
+				"type": "uint256"
+			},
+			{
+				"internalType": "string",
+				"name": "schoolName",
+				"type": "string"
+			},
+			{
+				"internalType": "string",
+				"name": "message",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "isDelivered",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "donor",
+				"type": "address"
+			}
+		],
+		"name": "getDonorHistory",
+		"outputs": [
+			{
+				"internalType": "uint256[]",
+				"name": "",
+				"type": "uint256[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
+				"name": "schoolName",
+				"type": "string"
+			}
+		],
+		"name": "getSchoolNeeds",
+		"outputs": [
+			{
+				"internalType": "string[]",
+				"name": "",
+				"type": "string[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "registeredSchools",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"name": "schools",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "name",
+				"type": "string"
+			},
+			{
+				"internalType": "string",
+				"name": "location",
+				"type": "string"
+			},
+			{
+				"internalType": "bool",
+				"name": "isRegistered",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "totalDonations",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+];
+        const contractAddress = "0xFC3401B7e86ae89F01405B1CA66AB7aA84AFC608";
+
+        async function init() {
+            if (typeof window.ethereum !== 'undefined') {
+                try {
+                    web3 = new Web3(window.ethereum);
+                    contract = new web3.eth.Contract(contractABI, contractAddress);
+                    
+                    document.getElementById('connectWallet').addEventListener('click', connectWallet);
+                    document.getElementById('registerSchoolBtn').addEventListener('click', registerSchool);
+                    document.getElementById('makeDonationBtn').addEventListener('click', makeDonation);
+                    
+                    await loadSchools();
+                    await loadDonations();
+                } catch (error) {
+                    console.error('Error initializing Web3:', error);
+                }
+            } else {
+                alert('Please install MetaMask to use this dApp!');
+            }
+        }
+
+        async function connectWallet() {
+            try {
+                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                userAccount = accounts[0];
+                document.getElementById('walletAddress').textContent = 
+                    `Connected: ${userAccount.substring(0, 6)}...${userAccount.substring(38)}`;
+            } catch (error) {
+                console.error('Error connecting wallet:', error);
+            }
+        }
+
+        async function registerSchool() {
+            if (!userAccount) {
+                alert('Please connect your wallet first!');
+                return;
+            }
+
+            const name = document.getElementById('schoolName').value;
+            const location = document.getElementById('schoolLocation').value;
+            const needs = document.getElementById('schoolNeeds').value.split(',').map(need => need.trim());
+
+            try {
+                await contract.methods.registerSchool(name, location, needs)
+                    .send({ from: userAccount });
+                alert('School registered successfully!');
+                await loadSchools();
+            } catch (error) {
+                console.error('Error registering school:', error);
+            }
+        }
+
+        async function makeDonation() {
+            if (!userAccount) {
+                alert('Please connect your wallet first!');
+                return;
+            }
+
+            const schoolName = document.getElementById('donateSchoolSelect').value;
+            const itemName = document.getElementById('itemName').value;
+            const quantity = document.getElementById('quantity').value;
+            const message = document.getElementById('message').value;
+
+            try {
+                await contract.methods.makeDonation(itemName, quantity, schoolName, message)
+                    .send({ from: userAccount });
+                alert('Donation made successfully!');
+                await loadDonations();
+            } catch (error) {
+                console.error('Error making donation:', error);
+            }
+        }
+
+        async function loadSchools() {
+            try {
+                const schools = await contract.methods.getAllSchools().call();
+                const select = document.getElementById('donateSchoolSelect');
+                select.innerHTML = '<option value="">Select a school</option>';
+
+                for (const schoolName of schools) {
+                    const option = document.createElement('option');
+                    option.value = schoolName;
+                    option.textContent = schoolName;
+                    select.appendChild(option);
+                }
+            } catch (error) {
+                console.error('Error loading schools:', error);
+            }
+        }
+
+        async function loadDonations() {
+            try {
+                const totalDonations = await contract.methods.totalDonations().call();
+                const historyDiv = document.getElementById('donationHistory');
+                historyDiv.innerHTML = '';
+
+                for (let i = totalDonations - 1; i >= Math.max(0, totalDonations - 5); i--) {
+                    const donation = await contract.methods.getDonationDetails(i).call();
+                    const donationElement = document.createElement('div');
+                    donationElement.className = 'p-4 border rounded bg-gray-50';
+                    donationElement.innerHTML = `
+                        <p class="font-semibold">${donation.quantity} ${donation.itemName}</p>
+                        <p class="text-gray-600">Donated to: ${donation.schoolName}</p>
+                        <p class="text-gray-600">Message: ${donation.message}</p>
+                        <p class="text-gray-500 text-sm">From: ${donation.donor.substring(0, 6)}...${donation.donor.substring(38)}</p>
+                        <p class="text-gray-500 text-sm">Status: ${donation.isDelivered ? 'Delivered' : 'Pending'}</p>
+                    `;
+                    historyDiv.appendChild(donationElement);
+                }
+            } catch (error) {
+                console.error('Error loading donations:', error);
+            }
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
